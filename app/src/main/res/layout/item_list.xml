@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.dean.customviewgroup.ui.SweepLayout
+    android:id="@+id/sl_container"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_height="match_parent"
+    android:layout_width="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:gravity="center_vertical"
+        android:layout_height="70dp">
+        <TextView
+            android:textSize="20sp"
+            android:id="@+id/tv_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="内容"/>
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:gravity="center_vertical"
+        android:layout_height="70dp">
+        <TextView
+            android:textSize="18sp"
+            android:background="@android:color/holo_blue_bright"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Call"/>
+        <TextView
+            android:textSize="18sp"
+            android:background="@android:color/holo_orange_dark"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Call"/>
+    </LinearLayout>
+</com.dean.customviewgroup.ui.SweepLayout>
+
+
