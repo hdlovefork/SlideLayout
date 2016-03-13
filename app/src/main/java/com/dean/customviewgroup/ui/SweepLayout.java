@@ -8,6 +8,10 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 
+import static android.support.v4.widget.ViewDragHelper.Callback;
+import static android.support.v4.widget.ViewDragHelper.STATE_DRAGGING;
+import static android.support.v4.widget.ViewDragHelper.create;
+
 /**
  * Created by Administrator on 2016/3/9.
  */
@@ -52,62 +56,8 @@ public class SweepLayout extends FrameLayout {
 
     public SweepLayout(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mViewDragHelper = ViewDragHelper.create(this, mCallback);
+        mViewDragHelper = create(this, new ViewDragHelperCallback());
     }
-
-    private ViewDragHelper.Callback mCallback = new ViewDragHelper.Callback() {
-        @Override
-        public boolean tryCaptureView(View child, int pointerId) {
-            return true;
-        }
-
-
-        @Override
-        public int clampViewPositionHorizontal(View child, int left, int dx) {
-            if (mViewDragHelper.getViewDragState() == ViewDragHelper.STATE_DRAGGING && Math.abs(dx)>10) {
-                requestDisallowInterceptTouchEvent(true);//手指在左右滑动时禁止父控件拦截事件，让我自由滑动
-            }
-            if (child == mContentView) {
-                left = left > 0 ? 0 : left;
-                left = left < -mDragRange ? -mDragRange : left;
-            } else {
-                left = left > mContentWidth ? mContentWidth : left;
-                left = left < mContentWidth - mDragRange ? mContentWidth - mDragRange : left;
-            }
-            return left;
-        }
-
-
-        @Override
-        public int clampViewPositionVertical(View child, int top, int dy) {
-            return getPaddingTop();
-        }
-
-        @Override
-        public void onViewPositionChanged(View changedView, int left, int top, int dx, int dy) {
-            if (changedView == mContentView) {
-                mExtraView.offsetLeftAndRight(dx);
-            } else {
-                mContentView.offsetLeftAndRight(dx);
-            }
-            ViewCompat.postInvalidateOnAnimation(SweepLayout.this);
-            Status prevStatus = getStatus();
-            updateStatus();
-            dispatchEvent(prevStatus, getStatus());
-        }
-
-        @Override
-        public void onViewReleased(View releasedChild, float xvel, float yvel) {
-            if (xvel == 0 && mContentView.getLeft() < -mDragRange / 2f) {
-                open();
-            } else if (xvel < 0) {
-                open();
-            } else {
-                close();
-            }
-            requestDisallowInterceptTouchEvent(false);
-        }
-    };
 
     private OnStatusChangeListener mOnStatusChangeListener;
 
@@ -127,7 +77,7 @@ public class SweepLayout extends FrameLayout {
         void onPrepareClose(SweepLayout view);
     }
 
-    private void dispatchEvent(Status prevStatus, Status curStatus) {
+    private void dispatchStatusEvent(Status prevStatus, Status curStatus) {
         if (prevStatus != curStatus && mOnStatusChangeListener != null) {
             if (curStatus == Status.Open) {
                 mOnStatusChangeListener.onOpen(this);
@@ -200,15 +150,79 @@ public class SweepLayout extends FrameLayout {
         super.onLayout(changed, left, top, right, bottom);
         //让扩展View藏在正文View的右边
         mExtraView.offsetLeftAndRight(mContentWidth);
+        //bringChildToFront(mContentView);
     }
+
+    private class ViewDragHelperCallback extends Callback{
+        @Override
+        public boolean tryCaptureView(android.view.View child, int pointerId) {
+            return true;
+        }
+
+        @Override
+        public int clampViewPositionHorizontal(View child, int left, int dx) {
+            if (mViewDragHelper.getViewDragState() == STATE_DRAGGING && Math
+                    .abs(dx) > 10) {
+                requestDisallowInterceptTouchEvent(true);//手指在左右滑动时禁止父控件拦截事件，让我自由滑动
+            }
+            if (child == mContentView) {
+                left = left > 0 ? 0 : left;
+                left = left < -mDragRange ? -mDragRange : left;
+            } else {
+                left = left > mContentWidth ? mContentWidth : left;
+                left = left < mContentWidth - mDragRange ? mContentWidth - mDragRange : left;
+            }
+            return left;
+        }
+
+
+        @Override
+        public int clampViewPositionVertical(View child, int top, int dy) {
+            return getPaddingTop();
+        }
+
+        @Override
+        public void onViewPositionChanged(View changedView, int left, int top, int dx, int dy) {
+            if (changedView == mContentView) {
+                mExtraView.offsetLeftAndRight(dx);
+            } else {
+                mContentView.offsetLeftAndRight(dx);
+            }
+           ViewCompat.postInvalidateOnAnimation(SweepLayout.this);
+            Status prevStatus = getStatus();
+            updateStatus();
+            dispatchStatusEvent(prevStatus, getStatus());
+        }
+
+        @Override
+        public int getViewHorizontalDragRange(View child) {
+            //该方法不用真正限制拖拽的范围，这里大于0即可
+            //它的返回值仅仅决定当参数child包含有点击事件的子child时child是否可以拖拽以及用于计算动画执行的时长
+            return  mDragRange;
+        }
+
+        @Override
+        public void onViewReleased(View releasedChild, float xvel, float yvel) {
+            if (xvel == 0 && mContentView.getLeft() < -mDragRange / 2f) {
+                open();
+            } else if (xvel < 0) {
+                open();
+            } else {
+                close();
+            }
+            requestDisallowInterceptTouchEvent(false);
+        }
+    };
+
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        return mViewDragHelper.shouldInterceptTouchEvent(ev);
+        return mViewDragHelper.shouldInterceptTouchEvent(ev) ;//& mGestureDetector.onTouchEvent(ev);
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+
         mViewDragHelper.processTouchEvent(event);
         return true;
     }

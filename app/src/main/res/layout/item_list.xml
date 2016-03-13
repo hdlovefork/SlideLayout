@@ -2,36 +2,60 @@
 <com.dean.customviewgroup.ui.SweepLayout
     android:id="@+id/sl_container"
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_height="match_parent"
-    android:layout_width="match_parent">
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
-    <LinearLayout
+    <RelativeLayout
+        android:id="@+id/ll_content"
         android:layout_width="match_parent"
-        android:gravity="center_vertical"
         android:layout_height="70dp">
+
         <TextView
-            android:textSize="20sp"
             android:id="@+id/tv_name"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="内容"/>
-    </LinearLayout>
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="20dp"
+            android:text="内容"
+            android:textSize="20sp"/>
+
+        <com.dean.customviewgroup.ui.GooView
+            android:layout_alignParentRight="true"
+            android:layout_marginRight="10dp"
+            android:layout_centerVertical="true"
+            android:id="@+id/gv_goo"
+            android:layout_width="18dp"
+            android:layout_height="18dp"/>
+
+    </RelativeLayout>
+
     <LinearLayout
+        android:id="@+id/ll_option"
         android:layout_width="wrap_content"
-        android:gravity="center_vertical"
-        android:layout_height="70dp">
-        <TextView
-            android:textSize="18sp"
+        android:layout_height="70dp"
+        android:gravity="center_vertical">
+
+        <Button
+            android:id="@+id/tv_call"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
             android:background="@android:color/holo_blue_bright"
+            android:gravity="center_vertical"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp"
+            android:text="Call"
+            android:textSize="18sp"/>
+
+        <Button
+            android:id="@+id/tv_del"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Call"/>
-        <TextView
-            android:textSize="18sp"
+            android:layout_height="match_parent"
             android:background="@android:color/holo_orange_dark"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Call"/>
+            android:gravity="center_vertical"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp"
+            android:text="Dele"
+            android:textSize="18sp"/>
     </LinearLayout>
 </com.dean.customviewgroup.ui.SweepLayout>
 
