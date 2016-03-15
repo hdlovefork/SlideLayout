@@ -25,7 +25,6 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.OvershootInterpolator;
 import android.widget.ImageView;
@@ -38,14 +37,10 @@ import com.dean.customviewgroup.utils.GeometryUtil;
  * Created by Administrator on 2016/3/10.
  */
 public class GooView extends View {
-    //原始点的默认半径
-    static final float RADIUS_ORIGIN_CIRCLE = 12f;
-    //拖拽点的默认半径
-    static final float RADIUS_DRAG_CIRCLE = 12f;
     //允许拖拽的默认距离
     static final float DRAG_DISTANCE = 100f;
     //控制拖拽圆是否绘制
-    static final float INVALID_VALUE = Integer.MAX_VALUE;
+    static final float INVALID_VALUE = -1;
     private static final String TAG = "GooView";
     //默认的文字大小、颜色、样式
     private static final int TEXT_DEFAULT_SIZE = 12;
@@ -59,6 +54,7 @@ public class GooView extends View {
     private int mWidth;
     private int mHeight;
 
+    private GooView mGooView;
     /**
      * 绘制自身的形状的画笔
      */
@@ -67,11 +63,11 @@ public class GooView extends View {
     /**
      * 原始点半径大小
      */
-    private float mOriginRadius = RADIUS_ORIGIN_CIRCLE;
+    private float mOriginRadius = -1;
     /**
      * 拖拽点半径大小
      */
-    private float mDragRadius = RADIUS_DRAG_CIRCLE;
+    private float mDragRadius = -1;
     /**
      * 原始点圆心坐标
      */
@@ -112,8 +108,15 @@ public class GooView extends View {
      * 显示的文本
      */
     private String mText;
+    private boolean mIsInWindow;
     private boolean mDragging;
     private int mCurTextColor = Color.WHITE;
+
+    private boolean mAnimating;
+    /**
+     * 状态栏的高度
+     */
+    private int mStatusHeight;
 
     public GooView(Context context) {
         this(context, null);
@@ -125,13 +128,14 @@ public class GooView extends View {
         mCirclePaint.setColor(Color.RED);
         mTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         mTextPaint.setTextAlign(Paint.Align.CENTER);
-        mOriginCenterPt = new PointF();
+        mOriginCenterPt = new PointF(INVALID_VALUE, INVALID_VALUE);
         mDragCenterPt = new PointF(INVALID_VALUE, INVALID_VALUE);
         mInvalidateRect = new Rect();
         mPath = new Path();
         mWm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         mParams = new WindowManager.LayoutParams();
         mParams.format = PixelFormat.TRANSLUCENT;
+
 
         /*
          * Look the appearance up without checking first if it exists because
@@ -320,14 +324,24 @@ public class GooView extends View {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         //确保绘制的原始圆能完整的显示，所以这里取宽高的最小值，然后除以2作为半径
-        mDragRadius = mOriginRadius = Math.min(getMeasuredWidth(), getMeasuredHeight()) / 2;
+        if (mOriginRadius == INVALID_VALUE) {
+            mDragRadius = mOriginRadius = Math.min(getMeasuredWidth(), getMeasuredHeight()) / 2;
+        }
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (mIsRemove) {
+        if (mIsInWindow) {
+            Log.d(TAG, "Enter onDraw mDragCenterPt:x" + mDragCenterPt.x + " mDragCenterPt.y:" + mDragCenterPt.y + " mIsRemove:" + mIsRemove + " mIsOutOfRange:" + mIsOutOfRange);
+        }
+        if (mIsRemove || (!mIsInWindow && mGooView != null)) {
             //已经被销毁了无须绘制
             return;
+        }
+        if (mIsInWindow) {
+            //改变坐标系统，让canvas的原点（原点本来在状态栏左下角）向上移动一个状态栏的高度对齐到状态栏的的左上角
+            //目的是让触摸事件的RawX、RawY的值和canvas的坐标系统统一
+            canvas.translate(0, -mStatusHeight);
         }
         if (mIsOutOfRange) {
             //已经被拖出有效范围，只绘制拖拽圆
@@ -374,14 +388,15 @@ public class GooView extends View {
      * @param canvas
      */
     private void drawText(Canvas canvas) {
+        Log.d(TAG, "Enter drawText() mText:" + mText);
         //没有拖拽时绘制文本
         if (!TextUtils.isEmpty(mText)) {
             // 计算Baseline绘制的起点X轴坐标 ，计算方式：画布宽度的一半，因为画笔已经设置了文本居中对齐
             mTextPaint.setColor(mCurTextColor);
             mTextPaint.drawableState = getDrawableState();
-            int baseX = mWidth / 2;
+            float baseX = mOriginCenterPt.x;
             // 计算Baseline绘制的Y坐标 ，计算方式：画布高度的一半 - 文字总高度的一半
-            int baseY = (int) ((mHeight / 2) - ((mTextPaint.descent() + mTextPaint
+            float baseY = (int) (mOriginCenterPt.y - ((mTextPaint.descent() + mTextPaint
                     .ascent()) / 2));
 
             // 居中画一个文字
@@ -435,17 +450,23 @@ public class GooView extends View {
         super.onSizeChanged(w, h, oldw, oldh);
         mWidth = w;
         mHeight = h;
-        //根据宽高计算出自身圆心位置
-        mOriginCenterPt.set(mWidth / 2f, mHeight / 2f);
         //mDragCenterPt.set(-50, -50);
         //在父控件中可以看到这个View
-        supportDrawInParent();
+        //supportDrawInParent();
         //设置刷新时的无效区域为整个屏幕
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        //计算状态栏的高度
+        Rect rect = new Rect();
+        this.getWindowVisibleDisplayFrame(rect);
+        mStatusHeight = rect.top;
         int[] pt = new int[2];
         this.getLocationOnScreen(pt);//获取自己与屏幕的左上距离
         mInvalidateRect.set(-pt[0], -pt[1], screenWidth, screenHeight);
+        if (mOriginCenterPt.x == INVALID_VALUE || mOriginCenterPt.y == INVALID_VALUE) {
+            //根据宽高计算出自身圆心位置
+            mOriginCenterPt.set(mWidth / 2f, mHeight / 2f);
+        }
     }
 
     public void setOnStatusChangeListener(OnStatusChangeListener onStatusChangeListener) {
@@ -505,26 +526,25 @@ public class GooView extends View {
         void onClick(GooView gooView);
     }
 
+
     //更新拖拽点的位置以及引发事件
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (processInWindowIfNeed(event)) {
+            return true;
+        }
         float distance;
         switch (MotionEventCompat.getActionMasked(event)) {
             case MotionEvent.ACTION_DOWN:
-                //已经销毁不再拦截事件
-                if (mIsRemove) {
-                    return false;
-                }
-                getParent().requestDisallowInterceptTouchEvent(true);
                 //刚刚按下时拖拽圆没有超出有效范围
                 mIsOutOfRange = false;
                 mDragging = false;
                 break;
             case MotionEvent.ACTION_MOVE:
                 mDragging = true;
-                Log.d(TAG, "x:" + event.getX() + " y:" + event.getY());
+                Log.d(TAG, "x:" + event.getRawX() + " y:" + event.getRawY());
                 //更新拖拽圆的位置
-                updateDrag(event.getX(), event.getY());
+                updateDrag(event.getRawX(), event.getRawY());
                 //计算原始圆与拖拽圆圆心之间的距离
                 distance = GeometryUtil
                         .getDistanceBetween2Points(mOriginCenterPt, mDragCenterPt);
@@ -537,7 +557,7 @@ public class GooView extends View {
                 }
                 break;
             case MotionEvent.ACTION_UP:
-                getParent().requestDisallowInterceptTouchEvent(false);
+            case MotionEvent.ACTION_CANCEL:
                 if (mIsOutOfRange) {
                     //之前拖拽超出了有效范围
                     distance = GeometryUtil
@@ -548,26 +568,20 @@ public class GooView extends View {
                         mIsRemove = true;
                         ViewCompat
                                 .postInvalidateOnAnimation(this, mInvalidateRect.left, mInvalidateRect.top, mInvalidateRect.right, mInvalidateRect.bottom);
-                        if (mOnStatusChangeListener != null) {
-                            mOnStatusChangeListener.onRemove(this);
-                        }
                         //播放消失动画
                         if (mRemoveAnimationResId != 0) {
                             playRemoveAnimation();
                         }
-                    } else {//松手时放回去了，还原
+                    } else {//松手时放回去了，还原（不包含动画效果）
                         updateDrag(INVALID_VALUE, INVALID_VALUE);
+                        mIsOutOfRange = false;
                         if (mOnStatusChangeListener != null) {
                             mOnStatusChangeListener.onRestore(this, mIsOutOfRange);
                         }
-                        mIsOutOfRange = false;
                     }
                 } else if (mDragging) {
-                    //松手时拖拽圆超出出指定的范围，弹回去
+                    //松手时拖拽圆超出出指定的范围，弹回去（包含动画效果）
                     playRestoreAnimation();
-                    if (mOnStatusChangeListener != null) {
-                        mOnStatusChangeListener.onRestore(this, mIsOutOfRange);
-                    }
                 } else {
                     if (mOnStatusChangeListener != null) {
                         mOnStatusChangeListener.onClick(this);
@@ -576,6 +590,132 @@ public class GooView extends View {
                 break;
         }
         return true;
+    }
+
+    /**
+     * 判断是否需要将事件将给Window中的GooView处理（Window中的GooView，以下简称假GV，程序员new出来或在xml中声明的都是真GV）
+     * 当这是一个真GV时，它的主要功能是创建/移除假GV，然后将事件处理下发给假GV处理，真GV在这里相当于是一个中介代理作用。
+     * 因为只有真GV才能收到触摸事件
+     *
+     * @param event
+     * @return
+     */
+    private boolean processInWindowIfNeed(MotionEvent event) {
+        boolean handled = false;
+        if (!mIsInWindow) {
+            int action = MotionEventCompat.getActionMasked(event);
+            if (action == MotionEvent.ACTION_DOWN) {
+                //已经销毁不再拦截事件
+                if (mIsRemove) {
+                    return true;
+                }
+                getParent().requestDisallowInterceptTouchEvent(true);
+                //把自己隐藏起来
+                mIsRemove = true;
+                ViewCompat.postInvalidateOnAnimation(this);//刷新开始重新绘制
+                addToWindow(event);//将一个假GV添加到屏幕前端
+            }
+            if (mGooView != null) {
+                handled = mGooView.onTouchEvent(event);
+            }
+            if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP) {
+                getParent().requestDisallowInterceptTouchEvent(false);
+                if (mGooView != null) {
+                    if (!mGooView.mAnimating) {
+                        mIsRemove = false;
+                        //没有作动画则移除这个Window，否则等动画完成后的回调中移除
+                        removeFromWindow();
+                        ViewCompat.postInvalidateOnAnimation(this);
+                    }
+                }
+            }
+            return handled;
+        }
+        return handled;
+    }
+
+    /**
+     * 添加一个假GV到屏幕顶端，因为需要让它遮挡住窗口中所有的控件
+     *
+     * @param event
+     */
+    private synchronized void addToWindow(MotionEvent event) {
+        if (mGooView != null) {
+            return;
+        }
+        mGooView = new GooView(getContext());
+        mGooView.mIsInWindow = true;
+        mGooView.mOriginRadius = mGooView.mDragRadius = mOriginRadius;
+        mGooView.mOriginCenterPt.set(event.getRawX(), event.getRawY());
+        mGooView.set(this);
+        mGooView.setOnStatusChangeListener(new SimpleOnStatusChangeListener() {
+
+            @Override
+            public void onRemove(GooView gooView) {
+                mIsRemove=true;
+                removeFromWindow();
+                ViewCompat.postInvalidateOnAnimation(GooView.this);
+                if(mOnStatusChangeListener!=null){
+                    mOnStatusChangeListener.onRemove(GooView.this);
+                }
+            }
+
+            @Override
+            public void onRestore(GooView gooView, boolean isOutOfRange) {
+                mIsOutOfRange = false;
+                mIsRemove = false;
+                //假GV弹回去的动画完成后，移除屏幕顶端的假GV
+                removeFromWindow();
+                ViewCompat.postInvalidateOnAnimation(GooView.this);
+                if(mOnStatusChangeListener!=null){
+                    mOnStatusChangeListener.onRestore(GooView.this, isOutOfRange);
+                }
+            }
+
+            @Override
+            public void onDragging(GooView gooView, float x, float y) {
+                if(mOnStatusChangeListener!=null){
+                    mOnStatusChangeListener.onDragging(GooView.this, x, y);
+                }
+            }
+
+            @Override
+            public void onClick(GooView gooView) {
+                if(mOnStatusChangeListener!=null){
+                    mOnStatusChangeListener.onClick(GooView.this);
+                }
+            }
+        });
+        mParams.width = -1;
+        mParams.height = -1;
+        mWm.addView(mGooView, mParams);
+    }
+
+    /**
+     * 从屏幕中移除假GV
+     */
+    private void removeFromWindow() {
+        if (mGooView != null) {
+            mWm.removeView(mGooView);
+            mGooView = null;
+        }
+    }
+
+    /**
+     * 从给出的GooView中设置文本、宽高属性
+     *
+     * @param srcView
+     */
+    private void set(GooView srcView) {
+        if (srcView == null) {
+            return;
+        }
+        this.setLayoutParams(srcView.getLayoutParams());
+        this.mTextPaint = srcView.mTextPaint;
+        this.mCirclePaint = srcView.mCirclePaint;
+        this.setText(srcView.getText());
+        this.setRemoveAnimation(srcView.mRemoveAnimationResId);
+        this.setOnStatusChangeListener(srcView.mOnStatusChangeListener);
     }
 
     /**
@@ -601,12 +741,16 @@ public class GooView extends View {
             public void onAnimationEnd(Animator animation) {
                 //动画结束时将拖拽圆隐藏起来
                 updateDrag(INVALID_VALUE, INVALID_VALUE);
+                if (mOnStatusChangeListener != null) {
+                    mOnStatusChangeListener.onRestore(GooView.this, mIsOutOfRange);
+                }
             }
         });
         valueAnimator.setDuration(300);
         //拖拽圆到达原始圆位置后做个张力动画，弹一下的效果
         valueAnimator.setInterpolator(new OvershootInterpolator(4));
         valueAnimator.start();
+        mAnimating = true;
     }
 
     /**
@@ -618,17 +762,10 @@ public class GooView extends View {
         AnimationDrawable animationDrawable = (AnimationDrawable) view.getBackground();
         //ImageView默认对齐于屏幕左上角，如果不指定下面代码的话，它将默认显示在屏幕的正中间位置，并且坐标系统的0，0点也是在屏幕正中间
         mParams.gravity = Gravity.LEFT | Gravity.TOP;
-        //        mParams.x= (int) (mDragCenterPt.x-animationDrawable.getIntrinsicWidth()/2);
-        //        mParams.y= (int) (mDragCenterPt.y-animationDrawable.getIntrinsicHeight()/2);
-        //获得通知栏高度
-        Rect rect = new Rect();
-        this.getWindowVisibleDisplayFrame(rect);
-        //获得这个View在屏幕中的位置，包括通知栏在内
-        int[] ps = new int[2];
-        this.getLocationOnScreen(ps);
-        //计算动画在屏幕中的位置
-        mParams.x = (int) (ps[0] + mDragCenterPt.x - animationDrawable.getIntrinsicWidth() / 2);
-        mParams.y = (int) (ps[1] - rect.top + mDragCenterPt.y - animationDrawable
+        //计算动画在屏幕中的位置，把图片的中心对准拖拽点，Y轴方向要减去一个状态栏高度，因为拖拽点的Y轴包含状态栏的高度
+        //这样才能让拖拽点的0，0位置对准这个Window的0，0位置
+        mParams.x = (int) (mDragCenterPt.x - animationDrawable.getIntrinsicWidth() / 2);
+        mParams.y = (int) (mDragCenterPt.y - mStatusHeight - animationDrawable
                 .getIntrinsicHeight() / 2);
         //动画ImageView大小默认为图片的大小
         mParams.width = animationDrawable.getIntrinsicWidth();
@@ -639,6 +776,7 @@ public class GooView extends View {
         //监听动画完成，从WindowManager中移除这个ImageView
         listenAnimComplete(view, animationDrawable);
     }
+
 
     /**
      * 销毁动画结束后从WindowManager中删除这个ImageView
@@ -658,6 +796,9 @@ public class GooView extends View {
             public void run() {
                 //从WindowManager中删除ImageView
                 mWm.removeView(view);
+                if (mOnStatusChangeListener != null) {
+                    mOnStatusChangeListener.onRemove(GooView.this);
+                }
             }
         }, duration);
     }
@@ -670,27 +811,7 @@ public class GooView extends View {
      */
     private void updateDrag(float x, float y) {
         mDragCenterPt.set(x, y);
-        ViewCompat
-                .postInvalidateOnAnimation(this, mInvalidateRect.left, mInvalidateRect.top, mInvalidateRect.right, mInvalidateRect.bottom);
-    }
-
-    /**
-     * 让父控件允许我绘制的内容超出他的范围
-     */
-    private void supportDrawInParent() {
-        View parent = (View) getParent();
-        while (parent != null) {
-            if (!(parent instanceof ViewGroup)) {
-                break;
-            }
-            ViewGroup p = (ViewGroup) parent;
-            p.setClipChildren(false);
-            p.setClipToPadding(false);
-            if (!(p.getParent() instanceof View)) {
-                break;
-            }
-            parent = (View) p.getParent();
-        }
+        ViewCompat.postInvalidateOnAnimation(this);
     }
 
     @Override
@@ -704,6 +825,9 @@ public class GooView extends View {
         super.setVisibility(visibility);
     }
 
+    /**
+     * 简单的事件状态监听，全部空的实现，外部继承自这个类只需实现感兴趣的事件无须编写冗余代码
+     */
     public static class SimpleOnStatusChangeListener implements OnStatusChangeListener {
 
         @Override
@@ -726,4 +850,5 @@ public class GooView extends View {
 
         }
     }
+
 }
