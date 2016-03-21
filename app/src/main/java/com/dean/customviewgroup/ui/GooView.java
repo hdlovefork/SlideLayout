@@ -564,14 +564,14 @@ public class GooView extends View {
                             .getDistanceBetween2Points(mOriginCenterPt, mDragCenterPt);
                     //再次判断枪手时有没有超出范围，如果超出范围则销毁它，否则恢复到原始圆的位置
                     if (distance > mDragDistance) {
-                        //松手时没有放回去需要销毁它
-                        mIsRemove = true;
-                        ViewCompat
-                                .postInvalidateOnAnimation(this, mInvalidateRect.left, mInvalidateRect.top, mInvalidateRect.right, mInvalidateRect.bottom);
                         //播放消失动画
                         if (mRemoveAnimationResId != 0) {
                             playRemoveAnimation();
                         }
+                        //松手时没有放回去需要销毁它
+                        mIsRemove = true;
+                        ViewCompat
+                                .postInvalidateOnAnimation(this, mInvalidateRect.left, mInvalidateRect.top, mInvalidateRect.right, mInvalidateRect.bottom);
                     } else {//松手时放回去了，还原（不包含动画效果）
                         updateDrag(INVALID_VALUE, INVALID_VALUE);
                         mIsOutOfRange = false;
@@ -775,6 +775,7 @@ public class GooView extends View {
         animationDrawable.start();
         //监听动画完成，从WindowManager中移除这个ImageView
         listenAnimComplete(view, animationDrawable);
+        mAnimating=true;
     }
 
 
